@@ -1,0 +1,26 @@
+# 运行产物（不要让它们进仓库）
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# lit-report 的中间/输出产物
+md_out/
+figure_out/
+figures/
+pages/
+files/
+mineru_output/
+*_files/
+*.pdf
+
+# 报告产物
+*_文献报告.md
+*_微信版.md
+*_早会解读.docx
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
