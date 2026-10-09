@@ -1,26 +1,50 @@
-# 运行产物（不要让它们进仓库）
+# Python 运行产物
 __pycache__/
 *.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+
+# 虚拟环境
 .venv/
 venv/
+env/
 
-# lit-report 的中间/输出产物
-md_out/
-figure_out/
+# lit-report 中间产物
+_intermediate/
+_analysis_cache.json
+_convert_meta.json
+
+# lit-report 输出产物
 figures/
 pages/
-files/
-mineru_output/
 *_files/
 *.pdf
+mineru_output/
 
 # 报告产物
 *_文献报告.md
 *_微信版.md
 *_早会解读.docx
 
-# 编辑器 / 系统
+# 调试产物
+_debug/
+*.log
+
+# 编辑器 / IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+
+# 系统文件
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# 测试产物
+test_output/
+temp/
+tmp/

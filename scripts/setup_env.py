@@ -33,8 +33,9 @@ for _s in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-# 最小依赖：PyMuPDF 负责自动抽图，pymupdf4llm 负责轻量 PDF→Markdown
+# 最小依赖：PyMuPDF 负责自动抽图，pymupdf4llm 负责轻量 PDF→Markdown，mineru 默认推荐
 MIN_DEPS = ["pymupdf", "pymupdf4llm"]
+RECOMMENDED = ["mineru"]  # 默认推荐安装但不强制
 
 # 可选增强后端：模块名 → pip 包名
 OPTIONAL = {
@@ -46,7 +47,7 @@ OPTIONAL = {
 }
 
 OPTIONAL_NOTE = {
-    "mineru": "版面+公式+OCR+图片，质量最高；模型约 6GB，建议 GPU",
+    "mineru": "版面+公式+OCR+图片，质量最高；模型约 6GB，建议 GPU（默认推荐）",
     "marker": "Surya 版面+OCR，质量接近 MinerU；CPU 可用、GPU 更快",
     "paddleocr": "PP-StructureV3，中文版面/表格识别强",
     "docling": "IBM 版面/表格识别好，纯 CPU 可用",
@@ -61,8 +62,18 @@ def has(mod: str) -> bool:
         return False
 
 
-def probe() -> dict:
-    return {
+def check_pubmed_mcp() -> bool:
+    """检查 PubMed MCP 是否可用（通过尝试列举资源）。"""
+    try:
+        # 这里只是标记，实际检查由 agent 调用 list_mcp_resources 完成
+        # setup_env.py 无法直接调用 MCP 工具
+        return None  # 标记为"需要 agent 检查"
+    except Exception:
+        return False
+
+
+def probe(check_mcp: bool = False) -> dict:
+    result = {
         "python": sys.executable,
         "python_version": sys.version.split()[0],
         "pymupdf": has("fitz") or has("pymupdf"),
@@ -73,6 +84,9 @@ def probe() -> dict:
         "docling": has("docling"),
         "markitdown": has("markitdown"),
     }
+    if check_mcp:
+        result["pubmed_mcp"] = check_pubmed_mcp()
+    return result
 
 
 def conda_bin() -> str | None:
@@ -99,7 +113,7 @@ def run(cmd: list[str]) -> int:
     return subprocess.run(cmd).returncode
 
 
-def do_install(env_name: str, extra: list[str]) -> int:
+def do_install(env_name: str, extra: list[str], include_recommended: bool = True) -> int:
     target = sys.executable
     create_hint = ""
     if not (has("fitz") or has("pymupdf")) or not has("pymupdf4llm"):
@@ -123,8 +137,10 @@ def do_install(env_name: str, extra: list[str]) -> int:
             target = os.path.join(venv_dir, "Scripts" if os.name == "nt" else "bin", "python")
             create_hint = target
 
-    pkgs = [p for p in MIN_DEPS if not has(p.replace("pymupdf", "fitz"))] + \
-           [OPTIONAL[e] for e in extra]
+    pkgs = [p for p in MIN_DEPS if not has(p.replace("pymupdf", "fitz"))]
+    if include_recommended:
+        pkgs += [OPTIONAL[r] for r in RECOMMENDED if not has(r)]
+    pkgs += [OPTIONAL[e] for e in extra]
     pkgs = list(dict.fromkeys(pkgs))
     if not pkgs:
         print("[setup] 依赖已齐备，无需安装")
@@ -143,14 +159,17 @@ def do_install(env_name: str, extra: list[str]) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description="lit-report 环境自检（默认不安装任何东西）")
     ap.add_argument("--json", action="store_true", help="机器可读输出")
+    ap.add_argument("--minimal", action="store_true", help="最小检查模式：只检查 pymupdf + pymupdf4llm")
     ap.add_argument("--install", action="store_true",
                     help="显式确认后才安装最小依赖（及 --with 指定的可选后端）")
     ap.add_argument("--with", dest="with_", default="",
                     help="逗号分隔的可选后端: " + ",".join(OPTIONAL))
+    ap.add_argument("--no-recommended", action="store_true", 
+                    help="--install 时不自动安装推荐后端（mineru）")
     ap.add_argument("--env-name", default="litreport", help="--install 时新建的 conda 环境名")
     args = ap.parse_args()
 
-    info = probe()
+    info = probe(check_mcp=not args.minimal)
     info["conda"] = conda_bin()
     info["min_ok"] = bool(info["pymupdf"] and info["pymupdf4llm"])
 
@@ -158,24 +177,34 @@ def main() -> int:
         print(json.dumps(info, ensure_ascii=False, indent=2))
     else:
         print("=" * 66)
-        print("lit-report 环境体检")
+        print("lit-report 环境体检" + (" [最小模式]" if args.minimal else ""))
         print("=" * 66)
         print(f"Python        : {info['python_version']}  ({info['python']})")
         print(f"conda         : {info['conda'] or '未检测到（--install 时改用 venv）'}")
         print(f"PyMuPDF       : {'OK' if info['pymupdf'] else '缺失'}   ← 自动抽图必需")
         print(f"pymupdf4llm   : {'OK' if info['pymupdf4llm'] else '缺失'}   ← 轻量 PDF→MD 必需")
-        print("-" * 66)
-        for k, note in OPTIONAL_NOTE.items():
-            mark = "OK  " if info.get(k) else "未装"
-            print(f"  {k:<12}{mark}  {note}")
+        
+        if not args.minimal:
+            print("-" * 66)
+            for k, note in OPTIONAL_NOTE.items():
+                mark = "OK  " if info.get(k) else "未装"
+                print(f"  {k:<12}{mark}  {note}")
+            
+            if "pubmed_mcp" in info:
+                mcp_status = "需要 agent 检查" if info["pubmed_mcp"] is None else ("OK" if info["pubmed_mcp"] else "不可用")
+                print(f"\nPubMed MCP    : {mcp_status}   ← 背景调研必需（agent 级别检查）")
+        
         print("=" * 66)
         if info["min_ok"]:
             print("最小依赖齐备，可以直接使用 lit-report。")
         else:
             print("最小依赖不完整。安装（需你明确同意）：")
             print("  python setup_env.py --install")
-        print("可选增强后端示例：")
-        print("  python setup_env.py --install --with docling,markitdown")
+        
+        if not args.minimal:
+            print("可选增强后端示例：")
+            print("  python setup_env.py --install --with docling,markitdown")
+            print("  python setup_env.py --install --no-recommended  # 不安装 MinerU")
 
     if args.install:
         extra = [x.strip() for x in args.with_.split(",") if x.strip()]
@@ -183,7 +212,7 @@ def main() -> int:
         if bad:
             print(f"[setup] 未知的可选后端: {bad}；可选: {sorted(OPTIONAL)}", file=sys.stderr)
             return 1
-        return do_install(args.env_name, extra)
+        return do_install(args.env_name, extra, include_recommended=not args.no_recommended)
     return 0
 
 
